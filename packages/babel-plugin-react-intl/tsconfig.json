@@ -1,35 +1,30 @@
 {
-    "extends": "../../tsconfig.json",
-    "compilerOptions": {
-        "outDir": "dist",
-        "rootDir": "src",
-        "module": "commonjs",
-        "baseUrl": ".",
-        "paths": {
-            "intl-messageformat-parser": ["../intl-messageformat-parser"]
-        },
-        "types": [
-            "babel__core",
-            "babel__generator",
-            "babel__template",
-            "babel__traverse",
-            "benchmark",
-            "chai",
-            "estree",
-            "fs-extra",
-            "istanbul-lib-coverage",
-            "istanbul-lib-report",
-            "istanbul-reports",
-            // Don't include mocha here
-            "jest",
-            "jest-diff",
-            "node",
-            "resolve",
-            "stack-utils",
-            "yargs"
-        ],
-        "sourceMap": true,
-        "esModuleInterop": true
+  "compilerOptions": {
+    "declaration": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "commonjs",
+    "baseUrl": ".",
+    "target": "es5",
+    "moduleResolution": "node",
+    "lib": [
+      "es6",
+      "dom",
+      "es2018.intl"
+    ],
+    "paths": {
+      "intl-messageformat-parser": [
+        "../intl-messageformat-parser"
+      ]
     },
-    "include": ["src/*.ts"]
+    "sourceMap": true,
+    "esModuleInterop": true
+  },
+  "include": [
+    "src/*.ts"
+  ]
 }

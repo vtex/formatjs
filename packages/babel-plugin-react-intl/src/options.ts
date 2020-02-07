@@ -5,12 +5,16 @@
  * and run json-schema-to-typescript to regenerate this file.
  */
 
+export type Logger = typeof console.warn
+
 export interface OptionsSchema {
   moduleSourceName?: string;
   extractSourceLocation?: boolean;
   messagesDir?: string;
-  overrideIdFn?: (id: string, defaultMessage: string, descriptor: string) => string;
+  overrideIdFn?: (id: string, defaultMessage: string, descriptor: string, from: string) => string;
   removeDefaultMessage?: boolean;
   extractFromFormatMessageCall?: boolean;
   additionalComponentNames?: string[];
+  errorsAsWarnings?: boolean
+  logger?: Logger
 }

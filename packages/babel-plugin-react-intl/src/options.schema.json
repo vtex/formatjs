@@ -10,7 +10,12 @@
     },
     "removeDefaultMessage": {"type": "boolean"},
     "extractFromFormatMessageCall": {"type": "boolean"},
-    "additionalComponentNames": {"type": "array", "items": {"type": "string"}}
+    "additionalComponentNames": {"type": "array", "items": {"type": "string"}},
+    "errorsAsWarnings": {"type": "boolean"},
+    "logger": {
+      "instanceof": "Function",
+      "tsType": "(message: any) => void"
+    }
   },
   "additionalProperties": false
 }

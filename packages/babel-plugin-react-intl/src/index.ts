@@ -33,12 +33,13 @@ import {OptionsSchema} from './options.js';
 const DEFAULT_COMPONENT_NAMES = ['FormattedMessage', 'FormattedHTMLMessage'];
 
 const EXTRACTED = Symbol('ReactIntlExtracted');
-const DESCRIPTOR_PROPS = new Set(['id', 'description', 'defaultMessage']);
+const DESCRIPTOR_PROPS = new Set<keyof MessageDescriptor>(['id', 'description', 'defaultMessage', 'from']);
 
 interface MessageDescriptor {
   id: string;
   defaultMessage?: string;
   description?: string;
+  from?: string 
 }
 
 export type ExtractedMessageDescriptor = MessageDescriptor &
@@ -175,6 +176,7 @@ function createMessageDescriptor(
       id: undefined,
       defaultMessage: undefined,
       description: undefined,
+      from: undefined
     }
   );
 }
@@ -189,9 +191,10 @@ function evaluateMessageDescriptor(
     isJSXSource,
   });
   const description = getMessageDescriptorValue(descriptorPath.description);
+  const from = getMessageDescriptorValue(descriptorPath.from);
 
   if (overrideIdFn) {
-    id = overrideIdFn(id, defaultMessage, description);
+    id = overrideIdFn(id, defaultMessage, description, from);
   }
   const descriptor: MessageDescriptor = {
     id,
@@ -203,17 +206,21 @@ function evaluateMessageDescriptor(
   if (defaultMessage) {
     descriptor.defaultMessage = defaultMessage;
   }
+  if (from) {
+    descriptor.from = from;
+  }
 
   return descriptor;
 }
 
 function storeMessage(
-  {id, description, defaultMessage}: MessageDescriptor,
+  descriptor: MessageDescriptor,
   path: NodePath,
   {extractSourceLocation}: OptionsSchema,
   filename: string,
   messages: Map<string, ExtractedMessageDescriptor>
 ) {
+  const {id, description, defaultMessage} = descriptor
   if (!id && !defaultMessage) {
     throw path.buildCodeFrameError(
       '[React Intl] Message Descriptors require an `id` or `defaultMessage`.'
@@ -242,7 +249,7 @@ function storeMessage(
     };
   }
 
-  messages.set(id, {id, description, defaultMessage, ...loc});
+  messages.set(id, {...descriptor, ...loc});
 }
 
 function referencesImport(
@@ -385,86 +392,95 @@ export default declare((api: any, options: OptionsSchema) => {
           additionalComponentNames = [],
           removeDefaultMessage,
           overrideIdFn,
+          errorsAsWarnings,
+          logger
         } = opts;
         if (wasExtracted(path)) {
           return;
         }
 
-        const name = path.get('name');
-
-        if (name.referencesImport(moduleSourceName, 'FormattedPlural')) {
-          if (path.node && path.node.loc)
-            console.warn(
-              `[React Intl] Line ${path.node.loc.start.line}: ` +
-                'Default messages are not extracted from ' +
-                '<FormattedPlural>, use <FormattedMessage> instead.'
-            );
-
-          return;
-        }
-
-        if (
-          name.isJSXIdentifier() &&
-          (referencesImport(name, moduleSourceName, DEFAULT_COMPONENT_NAMES) ||
-            additionalComponentNames.includes(name.node.name))
-        ) {
-          const attributes = path
-            .get('attributes')
-            .filter((attr): attr is NodePath<JSXAttribute> =>
-              attr.isJSXAttribute()
-            );
-
-          const descriptorPath = createMessageDescriptor(
-            attributes.map(attr => [
-              attr.get('name') as NodePath<JSXIdentifier>,
-              attr.get('value') as NodePath<StringLiteral>,
-            ])
-          );
-
-          // In order for a default message to be extracted when
-          // declaring a JSX element, it must be done with standard
-          // `key=value` attributes. But it's completely valid to
-          // write `<FormattedMessage {...descriptor} />`, because it will be
-          // skipped here and extracted elsewhere. The descriptor will
-          // be extracted only (storeMessage) if a `defaultMessage` prop.
-          if (descriptorPath.id && descriptorPath.defaultMessage) {
-            // Evaluate the Message Descriptor values in a JSX
-            // context, then store it.
-            const descriptor = evaluateMessageDescriptor(
-              descriptorPath,
-              true,
-              overrideIdFn
-            );
-
-            storeMessage(
-              descriptor,
-              path,
-              opts,
-              filename,
-              this.ReactIntlMessages
-            );
-
-            attributes.forEach(attr => {
-              const ketPath = attr.get('name');
-              const msgDescriptorKey = getMessageDescriptorKey(ketPath);
-              if (
-                // Remove description since it's not used at runtime.
-                msgDescriptorKey === 'description' ||
-                // Remove defaultMessage if opts says so.
-                (removeDefaultMessage && msgDescriptorKey === 'defaultMessage')
-              ) {
-                attr.remove();
-              } else if (
-                overrideIdFn &&
-                getMessageDescriptorKey(ketPath) === 'id'
-              ) {
-                attr.get('value').replaceWith(t.stringLiteral(descriptor.id));
-              }
-            });
-
-            // Tag the AST node so we don't try to extract it twice.
-            tagAsExtracted(path);
+        try {
+          const name = path.get('name');
+  
+          if (name.referencesImport(moduleSourceName, 'FormattedPlural')) {
+            if (path.node && path.node.loc)
+              console.warn(
+                `[React Intl] Line ${path.node.loc.start.line}: ` +
+                  'Default messages are not extracted from ' +
+                  '<FormattedPlural>, use <FormattedMessage> instead.'
+              );
+  
+            return;
           }
+  
+          if (
+            name.isJSXIdentifier() &&
+            (referencesImport(name, moduleSourceName, DEFAULT_COMPONENT_NAMES) ||
+              additionalComponentNames.includes(name.node.name))
+          ) {
+            const attributes = path
+              .get('attributes')
+              .filter((attr): attr is NodePath<JSXAttribute> =>
+                attr.isJSXAttribute()
+              );
+  
+            const descriptorPath = createMessageDescriptor(
+              attributes.map(attr => [
+                attr.get('name') as NodePath<JSXIdentifier>,
+                attr.get('value') as NodePath<StringLiteral>,
+              ])
+            );
+  
+            // In order for a default message to be extracted when
+            // declaring a JSX element, it must be done with standard
+            // `key=value` attributes. But it's completely valid to
+            // write `<FormattedMessage {...descriptor} />`, because it will be
+            // skipped here and extracted elsewhere. The descriptor will
+            // be extracted only (storeMessage) if a `defaultMessage` prop.
+            if (descriptorPath.id || descriptorPath.defaultMessage) {
+              // Evaluate the Message Descriptor values in a JSX
+              // context, then store it.
+              const descriptor = evaluateMessageDescriptor(
+                descriptorPath,
+                true,
+                overrideIdFn
+              );
+  
+              storeMessage(
+                descriptor,
+                path,
+                opts,
+                filename,
+                this.ReactIntlMessages
+              );
+  
+              attributes.forEach(attr => {
+                const ketPath = attr.get('name');
+                const msgDescriptorKey = getMessageDescriptorKey(ketPath);
+                if (
+                  // Remove description since it's not used at runtime.
+                  msgDescriptorKey === 'description' ||
+                  // Remove defaultMessage if opts says so.
+                  (removeDefaultMessage && msgDescriptorKey === 'defaultMessage')
+                ) {
+                  attr.remove();
+                } else if (
+                  overrideIdFn &&
+                  getMessageDescriptorKey(ketPath) === 'id'
+                ) {
+                  attr.get('value').replaceWith(t.stringLiteral(descriptor.id));
+                }
+              });
+            }
+          }
+        } catch (err) {
+          if (!errorsAsWarnings) {
+            throw err
+          }
+          logger?.(err)
+        } finally {
+          // Tag the AST node so we don't try to extract it twice.
+          tagAsExtracted(path);
         }
       },
 
@@ -483,6 +499,8 @@ export default declare((api: any, options: OptionsSchema) => {
           overrideIdFn,
           removeDefaultMessage,
           extractFromFormatMessageCall,
+          errorsAsWarnings,
+          logger
         } = opts;
         const callee = path.get('callee');
 
@@ -493,54 +511,61 @@ export default declare((api: any, options: OptionsSchema) => {
         function processMessageObject(
           messageDescriptor: NodePath<ObjectExpression>
         ) {
-          assertObjectExpression(messageDescriptor, callee);
-
-          if (wasExtracted(messageDescriptor)) {
-            return;
-          }
-
-          const properties = messageDescriptor.get('properties') as NodePath<
-            ObjectProperty
-          >[];
-
-          const descriptorPath = createMessageDescriptor(
-            properties.map(
-              prop =>
-                [prop.get('key'), prop.get('value')] as [
-                  NodePath<Identifier>,
-                  NodePath<StringLiteral>
-                ]
-            )
-          );
-
-          // Evaluate the Message Descriptor values, then store it.
-          const descriptor = evaluateMessageDescriptor(
-            descriptorPath,
-            false,
-            overrideIdFn
-          );
-          storeMessage(descriptor, messageDescriptor, opts, filename, messages);
-
-          // Remove description since it's not used at runtime.
-          messageDescriptor.replaceWith(
-            t.objectExpression([
-              t.objectProperty(
-                t.stringLiteral('id'),
-                t.stringLiteral(descriptor.id)
-              ),
-              ...(!removeDefaultMessage && descriptor.defaultMessage
-                ? [
-                    t.objectProperty(
-                      t.stringLiteral('defaultMessage'),
-                      t.stringLiteral(descriptor.defaultMessage)
-                    ),
+          try {
+            assertObjectExpression(messageDescriptor, callee);
+  
+            if (wasExtracted(messageDescriptor)) {
+              return;
+            }
+  
+            const properties = messageDescriptor.get('properties') as NodePath<
+              ObjectProperty
+            >[];
+  
+            const descriptorPath = createMessageDescriptor(
+              properties.map(
+                prop =>
+                  [prop.get('key'), prop.get('value')] as [
+                    NodePath<Identifier>,
+                    NodePath<StringLiteral>
                   ]
-                : []),
-            ])
-          );
-
-          // Tag the AST node so we don't try to extract it twice.
-          tagAsExtracted(messageDescriptor);
+              )
+            );
+  
+            // Evaluate the Message Descriptor values, then store it.
+            const descriptor = evaluateMessageDescriptor(
+              descriptorPath,
+              false,
+              overrideIdFn
+            );
+            storeMessage(descriptor, messageDescriptor, opts, filename, messages);
+  
+            // Remove description since it's not used at runtime.
+            messageDescriptor.replaceWith(
+              t.objectExpression([
+                t.objectProperty(
+                  t.stringLiteral('id'),
+                  t.stringLiteral(descriptor.id)
+                ),
+                ...(!removeDefaultMessage && descriptor.defaultMessage
+                  ? [
+                      t.objectProperty(
+                        t.stringLiteral('defaultMessage'),
+                        t.stringLiteral(descriptor.defaultMessage)
+                      ),
+                    ]
+                  : []),
+              ])
+            );
+          } catch (err) {
+            if (!errorsAsWarnings) {
+              throw err
+            }
+            logger?.(err)
+          } finally {
+            // Tag the AST node so we don't try to extract it twice.
+            tagAsExtracted(messageDescriptor);
+          }
         }
 
         // Check that this is `defineMessages` call
