@@ -1,5 +1,5 @@
 {
-  "name": "babel-plugin-react-intl",
+  "name": "@vtex/babel-plugin-react-intl",
   "version": "5.1.18",
   "description": "Extracts string messages for translation from modules that use React Intl.",
   "repository": {
